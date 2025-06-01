@@ -6,7 +6,6 @@ from ulauncher.api.shared.event import KeywordQueryEvent
 import subprocess
 import shutil
 
-
 class PackageSearchExtension(Extension):
 
     def __init__(self):
@@ -23,41 +22,55 @@ class PackageSearchExtension(Extension):
 
 class KeywordQueryEventListener(EventListener):
     def on_event(self, event, extension):
-        query = event.get_argument()
-        items = []
-
-        if not query:
-            return RenderResultListAction(
-                [
-                    ExtensionResultItem(
-                        name="Enter a package name to search",
-                        description="e.g., pack neovim",
-                        on_enter=None,
-                    )
-                ]
-            )
-
-        if not extension.backend:
-            return RenderResultListAction(
-                [
-                    ExtensionResultItem(
-                        name="No supported package manager found",
-                        description="Install yay, pamac or pacman",
-                        on_enter=None,
-                    )
-                ]
-            )
-
         try:
-            results = run_search(extension.backend, query)
-            for name, desc in results:
-                items.append(
-                    ExtensionResultItem(name=name, description=desc, on_enter=None)
+            query = event.get_argument()
+            items = []
+
+            if not query:
+                return RenderResultListAction(
+                    [
+                        ExtensionResultItem(
+                            name="Enter a package name to search",
+                            description="e.g., pack neovim",
+                            on_enter=None,
+                        )
+                    ]
                 )
+
+            if not extension.backend:
+                return RenderResultListAction(
+                    [
+                        ExtensionResultItem(
+                            name="No supported package manager found",
+                            description="Install yay, pamac or pacman",
+                            on_enter=None,
+                        )
+                    ]
+                )
+
+            results = run_search(extension.backend, query)
+            if not results:
+                items.append(
+                    ExtensionResultItem(
+                        name="No packages found",
+                        description=f"No packages matching '{query}'",
+                        on_enter=None
+                    )
+                )
+            else:
+                for name, desc in results:
+                    items.append(
+                        ExtensionResultItem(name=name, description=desc, on_enter=None)
+                    )
+
         except Exception as e:
-            items.append(
-                ExtensionResultItem(name="Error", description=str(e), on_enter=None)
-            )
+            items = [
+                ExtensionResultItem(
+                    name="Extension Error",
+                    description=f"Error: {str(e)}",
+                    on_enter=None
+                )
+            ]
 
         return RenderResultListAction(items)
 
@@ -72,21 +85,39 @@ def run_search(tool, query):
     else:
         raise ValueError("Unsupported backend")
 
-    proc = subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=True
-    )
+    try:
+        proc = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
+        )
+    except subprocess.CalledProcessError:
+        return []  # Return empty list if command fails
+    
     lines = proc.stdout.splitlines()
-
     results = []
-    name = ""
-    desc = ""
 
     for line in lines:
-        if line.startswith(tool):
-            parts = line.split("/", 1)[-1].split(" ", 1)
-            name = parts[0].strip()
-            desc = parts[1].strip() if len(parts) > 1 else ""
-            results.append((name, desc))
+        # Skip empty lines
+        if not line.strip():
+            continue
+            
+        # For pacman/yay output format: "repo/package-name version"
+        if tool in ["pacman", "yay"] and "/" in line and not line.startswith(" "):
+            parts = line.split()
+            if len(parts) >= 1:
+                package_info = parts[0].split("/")
+                if len(package_info) == 2:
+                    name = package_info[1]
+                    # Get description from next line if it starts with spaces
+                    desc = parts[1] if len(parts) > 1 else "No description"
+                    results.append((name, desc))
+        
+        # For pamac output format (adjust based on actual pamac output)
+        elif tool == "pamac" and not line.startswith(" "):
+            parts = line.split()
+            if len(parts) >= 1:
+                name = parts[0]
+                desc = " ".join(parts[1:]) if len(parts) > 1 else "No description"
+                results.append((name, desc))
 
     return results[:10]  # Limit to 10 results
 
