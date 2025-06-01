@@ -71,8 +71,9 @@ class KeywordQueryEventListener(EventListener):
                     elif extension.backend == "yay":
                         install_cmd = f"yay -S {package_name}"
                     
-                    # Create terminal command to open terminal and run install command
-                    terminal_cmd = f"gnome-terminal -- bash -c '{install_cmd}; echo \"Press Enter to close...\"; read'"
+                    # Create terminal command that works with Wayland
+                    # Try multiple terminal emulators in order of preference
+                    terminal_cmd = self._create_terminal_command(install_cmd)
                     
                     items.append(
                         ExtensionResultItem(
@@ -92,6 +93,25 @@ class KeywordQueryEventListener(EventListener):
             ]
 
         return RenderResultListAction(items)
+    
+    def _create_terminal_command(self, install_cmd):
+        """Create a terminal command that works across different environments"""
+        
+        # List of terminal emulators to try, in order of preference for Manjaro/GNOME
+        terminals = [
+            ("konsole", f"konsole -e bash -c '{install_cmd}; echo \"Press Enter to close...\"; read'"),
+            ("gnome-terminal", f"gnome-terminal -- bash -c '{install_cmd}; echo \"Press Enter to close...\"; read'"),
+            ("x-terminal-emulator", f"x-terminal-emulator -e bash -c '{install_cmd}; echo \"Press Enter to close...\"; read'"),
+            ("xterm", f"xterm -e bash -c '{install_cmd}; echo \"Press Enter to close...\"; read'"),
+        ]
+        
+        # Find the first available terminal
+        for terminal_name, terminal_cmd in terminals:
+            if shutil.which(terminal_name):
+                return terminal_cmd
+        
+        # Fallback: try to use the default terminal through desktop environment
+        return f"gtk-launch org.gnome.Terminal -- bash -c '{install_cmd}; echo \"Press Enter to close...\"; read'"
 
 
 def run_search(tool, query):
