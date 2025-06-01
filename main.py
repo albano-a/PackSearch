@@ -71,6 +71,8 @@ class KeywordQueryEventListener(EventListener):
                         install_cmd = f"pamac install {package_name}"
                     elif extension.backend == "yay":
                         install_cmd = f"yay -S {package_name}"
+                        
+                    icon = self._get_repo_icon(repo)
                     
                     items.append(
                         ExtensionResultItem(
@@ -90,6 +92,25 @@ class KeywordQueryEventListener(EventListener):
             ]
 
         return RenderResultListAction(items)
+    
+    def _get_repo_icon(self, repo):
+        """Get appropriate icon based on repository type"""
+        
+        # Official Arch repositories
+        if repo in ["core", "extra", "community", "multilib"]:
+            return "assets/icon-arch.png"  # Arch Linux icon
+        
+        # AUR (Arch User Repository)
+        elif repo == "aur":
+            return "assets/icon-arch.png"  # AUR icon
+        
+        # Manjaro repositories
+        elif repo in ["stable", "testing", "unstable"]:
+            return "assets/icon-manjaro.png"  # Manjaro icon
+        
+        # Default package icon
+        else:
+            return "assets/icon-package.png"  # Generic package icon
 
 
 def run_search(tool, query):
