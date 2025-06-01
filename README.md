@@ -2,6 +2,8 @@
 
 A Ulauncher extension for searching and installing packages from Arch Linux repositories and AUR using pacman, pamac, or yay.
 
+![PackSearch Demo](assets/pack_search_work.png)
+
 ## Features
 
 - 🔍 **Fast package search** across multiple package managers
