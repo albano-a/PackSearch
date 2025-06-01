@@ -1,15 +1,16 @@
-from ulauncher.api.client.EventListener import EventListener # type: ignore
-from ulauncher.api.client.Extension import Extension # type: ignore
+from ulauncher.api.client.EventListener import EventListener  # type: ignore
+from ulauncher.api.client.Extension import Extension  # type: ignore
 from ulauncher.api.shared.action.ExtensionCustomAction import ExtensionCustomAction  # type: ignore
-from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem # type: ignore
-from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction # type: ignore
-from ulauncher.api.shared.action.CopyToClipboardAction import CopyToClipboardAction # type: ignore
-from ulauncher.api.shared.event import KeywordQueryEvent # type: ignore
-from ulauncher.api.shared.action.RunScriptAction import RunScriptAction # type: ignore
+from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem  # type: ignore
+from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction  # type: ignore
+from ulauncher.api.shared.action.CopyToClipboardAction import CopyToClipboardAction  # type: ignore
+from ulauncher.api.shared.event import KeywordQueryEvent  # type: ignore
+from ulauncher.api.shared.action.RunScriptAction import RunScriptAction  # type: ignore
 
 
 import subprocess
 import shutil
+
 
 class PackageSearchExtension(Extension):
 
@@ -59,7 +60,7 @@ class KeywordQueryEventListener(EventListener):
                     ExtensionResultItem(
                         name="No packages found",
                         description=f"No packages matching '{query}'",
-                        on_enter=None
+                        on_enter=None,
                     )
                 )
             else:
@@ -71,14 +72,14 @@ class KeywordQueryEventListener(EventListener):
                         install_cmd = f"pamac install {package_name}"
                     elif extension.backend == "yay":
                         install_cmd = f"yay -S {package_name}"
-                        
+
                     icon = self._get_repo_icon(repo)
-                    
+
                     items.append(
                         ExtensionResultItem(
                             name=f"[{repo}] {package_name}",
                             description=f"{desc} (Press Enter to copy install command)",
-                            on_enter=CopyToClipboardAction(install_cmd)
+                            on_enter=CopyToClipboardAction(install_cmd),
                         )
                     )
 
@@ -87,27 +88,27 @@ class KeywordQueryEventListener(EventListener):
                 ExtensionResultItem(
                     name="Extension Error",
                     description=f"Error: {str(e)}",
-                    on_enter=None
+                    on_enter=None,
                 )
             ]
 
         return RenderResultListAction(items)
-    
+
     def _get_repo_icon(self, repo):
         """Get appropriate icon based on repository type"""
-        
+
         # Official Arch repositories
         if repo in ["core", "extra", "community", "multilib"]:
             return "assets/icon-arch.png"  # Arch Linux icon
-        
+
         # AUR (Arch User Repository)
         elif repo == "aur":
             return "assets/icon-arch.png"  # AUR icon
-        
+
         # Manjaro repositories
         elif repo in ["stable", "testing", "unstable"]:
             return "assets/icon-manjaro.png"  # Manjaro icon
-        
+
         # Default package icon
         else:
             return "assets/icon-package.png"  # Generic package icon
@@ -115,20 +116,20 @@ class KeywordQueryEventListener(EventListener):
 
 def run_search(tool, query):
     results = []
-    
+
     if tool == "pacman":
         cmd = ["pacman", "-Ss", query]
         results = _parse_pacman_output(cmd, query)
-        
+
     elif tool == "pamac":
         cmd = ["pamac", "search", query]
         results = _parse_pamac_output(cmd, query)
-        
+
     elif tool == "yay":
         # First search official repos
         cmd = ["yay", "-Ss", query, "--repo"]
         results = _parse_pacman_output(cmd, query)
-        
+
         # If we have less than 5 results, also search AUR
         if len(results) < 5:
             cmd_aur = ["yay", "-Ss", query, "--aur"]
@@ -149,18 +150,18 @@ def _parse_pacman_output(cmd, query):
         )
     except Exception:
         return []
-    
+
     lines = proc.stdout.splitlines()
     results = []
     i = 0
 
     while i < len(lines):
         line = lines[i].strip()
-        
+
         if not line:
             i += 1
             continue
-            
+
         if "/" in line and not line.startswith(" "):
             parts = line.split()
             if len(parts) >= 1:
@@ -168,17 +169,17 @@ def _parse_pacman_output(cmd, query):
                 if len(package_info) == 2:
                     repo = package_info[0]
                     name = package_info[1]
-                    
+
                     desc = "No description"
                     if i + 1 < len(lines) and lines[i + 1].startswith("    "):
                         desc = lines[i + 1].strip()
                         i += 1
-                    
+
                     priority = _calculate_priority(name, repo, query)
                     results.append((priority, name, repo, desc))
-        
+
         i += 1
-    
+
     return results
 
 
@@ -189,20 +190,20 @@ def _parse_pamac_output(cmd, query):
         )
     except Exception:
         return []
-    
+
     lines = proc.stdout.splitlines()
     results = []
-    
+
     for line in lines:
         line = line.strip()
         if not line:
             continue
-            
+
         if "(" in line and ")" in line:
             repo_start = line.rfind("(")
             repo_end = line.rfind(")")
             if repo_start != -1 and repo_end != -1 and repo_end > repo_start:
-                repo = line[repo_start + 1:repo_end]
+                repo = line[repo_start + 1 : repo_end]
                 package_part = line[:repo_start].strip()
                 parts = package_part.split()
                 if len(parts) >= 1:
@@ -210,13 +211,13 @@ def _parse_pamac_output(cmd, query):
                     desc = " ".join(parts[1:]) if len(parts) > 1 else "No description"
                     priority = _calculate_priority(name, repo, query)
                     results.append((priority, name, repo, desc))
-    
+
     return results
 
 
 def _calculate_priority(name, repo, query):
     priority = 0
-    
+
     # Exact match gets highest priority
     if name.lower() == query.lower():
         priority = 1000
@@ -226,11 +227,11 @@ def _calculate_priority(name, repo, query):
     # Query is in package name
     elif query.lower() in name.lower():
         priority = 500
-    
+
     # Boost official repos
     if repo in ["core", "extra", "community", "multilib"]:
         priority += 100
-    
+
     return priority
 
 
