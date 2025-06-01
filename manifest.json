@@ -1,0 +1,16 @@
+{
+  "required_api_version": "2",
+  "name": "PackSearch",
+  "description": "Search packages in pacman, pamac, or yay (AUR)",
+  "developer_name": "André Albano",
+  "icon": "assets/PackSearch.png",
+  "preferences": [
+    {
+      "id": "packsearch_kw",
+      "type": "keyword",
+      "name": "PackSearch",
+      "description": "PackSearch extension",
+      "default_value": "pack"
+    }
+  ]
+}
