@@ -1,8 +1,10 @@
-from ulauncher.api.client.EventListener import EventListener
-from ulauncher.api.client.Extension import Extension
-from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem
-from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction
-from ulauncher.api.shared.event import KeywordQueryEvent
+from ulauncher.api.client.EventListener import EventListener # type: ignore
+from ulauncher.api.client.Extension import Extension # type: ignore
+from ulauncher.api.shared.action.ExtensionCustomAction import ExtensionCustomAction  # type: ignore
+from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem # type: ignore
+from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction # type: ignore
+from ulauncher.api.shared.event import KeywordQueryEvent # type: ignore
+from ulauncher.api.shared.action.RunScriptAction import RunScriptAction # type: ignore
 
 
 import subprocess
@@ -60,9 +62,24 @@ class KeywordQueryEventListener(EventListener):
                     )
                 )
             else:
-                for name, desc in results:
+                for package_name, repo, desc in results:
+                    # Create install command based on backend
+                    if extension.backend == "pacman":
+                        install_cmd = f"sudo pacman -S {package_name}"
+                    elif extension.backend == "pamac":
+                        install_cmd = f"pamac install {package_name}"
+                    elif extension.backend == "yay":
+                        install_cmd = f"yay -S {package_name}"
+                    
+                    # Create terminal command to open terminal and run install command
+                    terminal_cmd = f"gnome-terminal -- bash -c '{install_cmd}; echo \"Press Enter to close...\"; read'"
+                    
                     items.append(
-                        ExtensionResultItem(name=name, description=desc, on_enter=None)
+                        ExtensionResultItem(
+                            name=f"[{repo}] {package_name}",
+                            description=f"{desc} (Press Enter to install)",
+                            on_enter=RunScriptAction(terminal_cmd)
+                        )
                     )
 
         except Exception as e:
@@ -96,10 +113,14 @@ def run_search(tool, query):
     
     lines = proc.stdout.splitlines()
     results = []
+    i = 0
 
-    for line in lines:
+    while i < len(lines):
+        line = lines[i].strip()
+        
         # Skip empty lines
-        if not line.strip():
+        if not line:
+            i += 1
             continue
             
         # For pacman/yay output format: "repo/package-name version"
@@ -108,18 +129,42 @@ def run_search(tool, query):
             if len(parts) >= 1:
                 package_info = parts[0].split("/")
                 if len(package_info) == 2:
+                    repo = package_info[0]
                     name = package_info[1]
-                    # Get description from next line if it starts with spaces
-                    desc = parts[1] if len(parts) > 1 else "No description"
-                    results.append((name, desc))
+                    
+                    # Try to get description from next line
+                    desc = "No description"
+                    if i + 1 < len(lines) and lines[i + 1].startswith("    "):
+                        desc = lines[i + 1].strip()
+                        i += 1  # Skip the description line in next iteration
+                    
+                    results.append((name, repo, desc))
         
-        # For pamac output format (adjust based on actual pamac output)
-        elif tool == "pamac" and not line.startswith(" "):
-            parts = line.split()
-            if len(parts) >= 1:
-                name = parts[0]
-                desc = " ".join(parts[1:]) if len(parts) > 1 else "No description"
-                results.append((name, desc))
+        # For pamac output format
+        elif tool == "pamac":
+            # Pamac format is typically: "package-name version (repo)"
+            if "(" in line and ")" in line:
+                # Extract repo from parentheses
+                repo_start = line.rfind("(")
+                repo_end = line.rfind(")")
+                if repo_start != -1 and repo_end != -1 and repo_end > repo_start:
+                    repo = line[repo_start + 1:repo_end]
+                    package_part = line[:repo_start].strip()
+                    parts = package_part.split()
+                    if len(parts) >= 1:
+                        name = parts[0]
+                        desc = " ".join(parts[1:]) if len(parts) > 1 else "No description"
+                        results.append((name, repo, desc))
+            else:
+                # Fallback parsing
+                parts = line.split()
+                if len(parts) >= 1:
+                    name = parts[0]
+                    repo = "unknown"
+                    desc = " ".join(parts[1:]) if len(parts) > 1 else "No description"
+                    results.append((name, repo, desc))
+        
+        i += 1
 
     return results[:10]  # Limit to 10 results
 
