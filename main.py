@@ -95,21 +95,41 @@ class KeywordQueryEventListener(EventListener):
 
 
 def run_search(tool, query):
+    results = []
+    
     if tool == "pacman":
         cmd = ["pacman", "-Ss", query]
+        results = _parse_pacman_output(cmd, query)
+        
     elif tool == "pamac":
         cmd = ["pamac", "search", query]
+        results = _parse_pamac_output(cmd, query)
+        
     elif tool == "yay":
-        cmd = ["yay", "-Ss", query]
+        # First search official repos
+        cmd = ["yay", "-Ss", query, "--repo"]
+        results = _parse_pacman_output(cmd, query)
+        
+        # If we have less than 5 results, also search AUR
+        if len(results) < 5:
+            cmd_aur = ["yay", "-Ss", query, "--aur"]
+            aur_results = _parse_pacman_output(cmd_aur, query)
+            results.extend(aur_results)
     else:
         raise ValueError("Unsupported backend")
 
+    # Sort by priority and return top 10
+    results.sort(key=lambda x: x[0], reverse=True)
+    return [(name, repo, desc) for priority, name, repo, desc in results[:10]]
+
+
+def _parse_pacman_output(cmd, query):
     try:
         proc = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10
         )
-    except subprocess.CalledProcessError:
-        return []  # Return empty list if command fails
+    except Exception:
+        return []
     
     lines = proc.stdout.splitlines()
     results = []
@@ -118,13 +138,11 @@ def run_search(tool, query):
     while i < len(lines):
         line = lines[i].strip()
         
-        # Skip empty lines
         if not line:
             i += 1
             continue
             
-        # For pacman/yay output format: "repo/package-name version"
-        if tool in ["pacman", "yay"] and "/" in line and not line.startswith(" "):
+        if "/" in line and not line.startswith(" "):
             parts = line.split()
             if len(parts) >= 1:
                 package_info = parts[0].split("/")
@@ -132,41 +150,69 @@ def run_search(tool, query):
                     repo = package_info[0]
                     name = package_info[1]
                     
-                    # Try to get description from next line
                     desc = "No description"
                     if i + 1 < len(lines) and lines[i + 1].startswith("    "):
                         desc = lines[i + 1].strip()
-                        i += 1  # Skip the description line in next iteration
+                        i += 1
                     
-                    results.append((name, repo, desc))
-        
-        # For pamac output format
-        elif tool == "pamac":
-            # Pamac format is typically: "package-name version (repo)"
-            if "(" in line and ")" in line:
-                # Extract repo from parentheses
-                repo_start = line.rfind("(")
-                repo_end = line.rfind(")")
-                if repo_start != -1 and repo_end != -1 and repo_end > repo_start:
-                    repo = line[repo_start + 1:repo_end]
-                    package_part = line[:repo_start].strip()
-                    parts = package_part.split()
-                    if len(parts) >= 1:
-                        name = parts[0]
-                        desc = " ".join(parts[1:]) if len(parts) > 1 else "No description"
-                        results.append((name, repo, desc))
-            else:
-                # Fallback parsing
-                parts = line.split()
-                if len(parts) >= 1:
-                    name = parts[0]
-                    repo = "unknown"
-                    desc = " ".join(parts[1:]) if len(parts) > 1 else "No description"
-                    results.append((name, repo, desc))
+                    priority = _calculate_priority(name, repo, query)
+                    results.append((priority, name, repo, desc))
         
         i += 1
+    
+    return results
 
-    return results[:10]  # Limit to 10 results
+
+def _parse_pamac_output(cmd, query):
+    try:
+        proc = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10
+        )
+    except Exception:
+        return []
+    
+    lines = proc.stdout.splitlines()
+    results = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        if "(" in line and ")" in line:
+            repo_start = line.rfind("(")
+            repo_end = line.rfind(")")
+            if repo_start != -1 and repo_end != -1 and repo_end > repo_start:
+                repo = line[repo_start + 1:repo_end]
+                package_part = line[:repo_start].strip()
+                parts = package_part.split()
+                if len(parts) >= 1:
+                    name = parts[0]
+                    desc = " ".join(parts[1:]) if len(parts) > 1 else "No description"
+                    priority = _calculate_priority(name, repo, query)
+                    results.append((priority, name, repo, desc))
+    
+    return results
+
+
+def _calculate_priority(name, repo, query):
+    priority = 0
+    
+    # Exact match gets highest priority
+    if name.lower() == query.lower():
+        priority = 1000
+    # Package name starts with query
+    elif name.lower().startswith(query.lower()):
+        priority = 750
+    # Query is in package name
+    elif query.lower() in name.lower():
+        priority = 500
+    
+    # Boost official repos
+    if repo in ["core", "extra", "community", "multilib"]:
+        priority += 100
+    
+    return priority
 
 
 if __name__ == "__main__":
